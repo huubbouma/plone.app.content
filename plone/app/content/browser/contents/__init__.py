@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from AccessControl import Unauthorized
 from Acquisition import aq_inner
+from os.path import split
 from plone.app.content.browser.file import TUS_ENABLED
 from plone.app.content.browser.interfaces import IFolderContentsView
 from plone.app.content.interfaces import IStructureAction
@@ -11,12 +12,15 @@ from plone.uuid.interfaces import IUUID
 from Products.CMFCore.utils import getToolByName
 from Products.CMFPlone import PloneMessageFactory as _
 from Products.CMFPlone import utils
-from Products.CMFPlone.utils import get_top_site_from_url
 from Products.Five import BrowserView
+from urlparse import urlparse
 from zope.browsermenu.interfaces import IBrowserMenu
 from zope.component import getMultiAdapter
 from zope.component import getUtilitiesFor
 from zope.component import getUtility
+from zope.component import providedBy
+from zope.component.hooks import getSite
+from zope.component.interfaces import ISite
 from zope.i18n import translate
 from zope.interface import implementer
 
@@ -35,11 +39,44 @@ zope.deferredimport.deprecated(
     Rearrange='plone.app.content.browser.content.rearrange:RearrangeOrderActionView',  # noqa
 )
 
-zope.deferredimport.deprecated(
-    "Import from Products.CMFPlone.utils instead",
-    get_top_site_from_url='Products.CMFPlone:utils.get_top_site_from_url',
-)
 
+def get_top_site_from_url(context, request):
+    """Find the top-most site, which is still in the url path.
+
+    If the current context is within a subsite within a PloneSiteRoot and no
+    virtual hosting is in place, the PloneSiteRoot is returned.
+    When at the same context but in a virtual hosting environment with the
+    virtual host root pointing to the subsite, it returns the subsite instead
+    the PloneSiteRoot.
+
+    For this given content structure:
+
+    /Plone/Subsite
+
+    It should return the following in these cases:
+
+    - No virtual hosting, URL path: /Plone, Returns: Plone Site
+    - No virtual hosting, URL path: /Plone/Subsite, Returns: Plone
+    - Virtual hosting roots to Subsite, URL path: /, Returns: Subsite
+    """
+    url_path = urlparse(context.absolute_url()).path.split('/')
+
+    site = getSite()
+    try:
+        for idx in range(len(url_path)):
+            _path = '/'.join(url_path[:idx + 1]) or '/'
+            site_path = request.physicalPathFromURL(_path)
+            _site = context.restrictedTraverse('/'.join(site_path) or '/')
+            if ISite.providedBy(_site):
+                break
+        if _site:
+            site = _site
+    except (ValueError, AttributeError):
+        # On error, just return getSite.
+        # Refs: https://github.com/plone/plone.app.content/issues/103
+        # Also, TestRequest doesn't have physicalPathFromURL
+        pass
+    return site
 
 class ContentsBaseAction(BrowserView):
 
