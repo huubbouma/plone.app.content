@@ -295,6 +295,12 @@ class VocabularyView(BaseVocabularyView):
                 ):
                     # If no checker, fall back to checking the global registry
                     authorized = True
+            elif PERMISSIONS.get(factory_name) and sm.checkPermission(
+                PERMISSIONS.get(factory_name),
+                context
+            ):
+                # If no checker, fall back to checking the global registry
+                authorized = True
 
             if not authorized:
                 raise VocabLookupException('Vocabulary lookup not allowed')
